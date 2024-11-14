@@ -1,10 +1,22 @@
-local common = require "ark_dev_common"
 local CONSTANTS = require "ark_dev_constants"
 
 local ArkSkill = Class(function(self, inst)
   self.inst = inst
-  local config = common.getPlayerArkSkillConfigTuning(inst)
+end)
+
+function ArkSkill:SetupSkillConfig(config)
   self.config = config
+  -- 搞几个默认值进去
+  for _, config in ipairs(config.skills) do
+    config.chargeType = config.chargeType or CONSTANTS.CHARGE_TYPE.TIME
+    config.autoEmit = config.autoEmit or nil
+    for _, levelConfig in ipairs(config.levels) do
+      levelConfig.charge = levelConfig.charge or 1
+      levelConfig.buffTime = levelConfig.buffTime or 1
+      levelConfig.bullet = levelConfig.bullet or 1
+      levelConfig.maxEmitCharge = levelConfig.maxEmitCharge or 1
+    end
+  end
   self.skills = {}
   for i, config in ipairs(config.skills) do
     local level = 1
@@ -23,13 +35,17 @@ local ArkSkill = Class(function(self, inst)
       timeBuff = false
     }
   end
-  -- 默认解锁第一个技能
-  self:UnLock(1)
-  -- 测试解锁 2 3 技能
-  self:UnLock(2)
-  self:UnLock(3)
+  for i, skill in ipairs(self.skills) do
+    if skill.config.unlock then
+      self:UnLock(i)
+    end
+  end
   self.inst:StartUpdatingComponent(self)
-end)
+  -- 下次调度让客户端安装UI
+  self.inst:DoTaskInTime(0, function()
+    SendModRPCToClient(GetClientModRPC("arkSkill", "SetupArkSkillUi"), self.inst.userid, json.encode(config))
+  end)
+end
 
 -- 便捷的几个方法
 function ArkSkill:GetSkill(idx)

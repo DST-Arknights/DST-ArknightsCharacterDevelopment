@@ -1,7 +1,6 @@
 GLOBAL.setmetatable(env, {
   __index = function(t, k) return GLOBAL.rawget(GLOBAL, k) end
 })
-local common = require "ark_dev_common"
 
 Assets = {Asset("ATLAS", "images/ark_skill.xml")}
 
@@ -26,21 +25,6 @@ AddModRPCHandler("arkSkill", "HandEmitSkill", function(player, skillIndex)
   end
 end)
 
-AddClassPostConstruct('widgets/controls', function(self, owner)
-  local config = common.getPlayerArkSkillConfigTuning(owner)
-  if not config then
-    return
-  end
-  if not self.inv or not self.inv.hand_inv then
-    return
-  end
-  local ArkSkillUi = require "widgets/ark_skill_ui"
-  self.arkSkillUi = self.inv.hand_inv:AddChild(ArkSkillUi(owner, config))
-  self.arkSkillUi:SetPosition(config.position or Vector3(-800, 80, 0))
-  self.arkSkillUi:SetScale(.4, .4, .4)
-  return
-end)
-
 local function findSkillHotKeyIndex(hotKey, skillConfigs)
   for i, config in ipairs(skillConfigs) do
     if config.hotKey == hotKey then
@@ -49,14 +33,20 @@ local function findSkillHotKeyIndex(hotKey, skillConfigs)
   end
 end
 
-AddClassPostConstruct("screens/playerhud", function(self)
-  local _OnRawKey = self.OnRawKey
-  function self:OnRawKey(key, down)
-    local config = common.getPlayerArkSkillConfigTuning(self.owner)
-    if not config then
-      self.OnRawKey = _OnRawKey
-      return _OnRawKey(self, key, down)
-    end
+AddClientModRPCHandler("arkSkill", "SetupArkSkillUi", function(config)
+  if not config or not ThePlayer.HUD or ThePlayer.HUD.controls.arkSkillUi then
+    return
+  end
+  local config = json.decode(config)
+  local controls = ThePlayer.HUD.controls
+  local ArkSkillUi = require "widgets/ark_skill_ui"
+  controls.arkSkillUi = controls.inv.hand_inv:AddChild(ArkSkillUi(ThePlayer, config))
+  controls.arkSkillUi:SetPosition(config.position or Vector3(-800, 80, 0))
+  controls.arkSkillUi:SetScale(.4, .4, .4)
+  -- TODO: 加载本地热键设置
+  -- 安装热键
+  local _OnRawKey = ThePlayer.HUD.OnRawKey
+  function ThePlayer.HUD:OnRawKey(key, down)
     if not down then
       return _OnRawKey(self, key, down)
     end
