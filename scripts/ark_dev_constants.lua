@@ -8,8 +8,16 @@ local SKILL_STATUS = {
 return {
   SKILL_STATUS = SKILL_STATUS,
   CHARGE_TYPE = {
-    TIME = "time",
+    NONE = "none",
+    AUTO = "auto",
     ATTACK = "attack",
     UNDER_ATTACK = "under_attack",
-  }
+  },
+  EMIT_TYPE = {
+    PASSIVE = "passive",
+    HAND = "hand",
+    AUTO = "auto",
+    ATTACK = "attack",
+    UNDER_ATTACK = "under_attack",
+  },
 }

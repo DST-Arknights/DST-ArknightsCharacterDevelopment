@@ -8,12 +8,12 @@ local ArkSkillUi = Class(Widget, function(self, owner, config)
   self.owner = owner
   self.skills = {}
   for i, config in ipairs(config.skills) do
-    self:AddSkill(config)
+    self:AddSkill(config, i)
   end
 end)
 
-function ArkSkillUi:AddSkill(config)
-  local skill = self:AddChild(ArkSkill(self.owner, config))
+function ArkSkillUi:AddSkill(config, idx)
+  local skill = self:AddChild(ArkSkill(self.owner, config, idx))
   skill:SetPosition(SKILL_OFFSET_X * #self.skills, 0, 0)
   table.insert(self.skills, skill)
 end

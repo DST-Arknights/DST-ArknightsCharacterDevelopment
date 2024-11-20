@@ -1,12 +1,14 @@
 local CONSTANTS = require "ark_dev_constants"
 local Widget = require "widgets/widget"
-local UIAnim = require "widgets/uianim"
 local Image = require "widgets/image"
 local Text = require "widgets/text"
 
-local ArkSkill = Class(Widget, function(self, owner, config)
+local ark_skill_desc = require "widgets/ark_skill_desc"
+
+local ArkSkill = Class(Widget, function(self, owner, config, idx)
   Widget._ctor(self, "ArkSkill")
   self.owner = owner
+  self.idx = idx
   self.size = {128, 128}
 
   local skill = self:AddChild(Image(config.atlas, config.image))
@@ -63,9 +65,16 @@ local ArkSkill = Class(Widget, function(self, owner, config)
   statusText:SetFont(CODEFONT)
 
   -- 加一个文本框, 用来展示emitCharge
-  local emitChargeText = self:AddChild(Text(FALLBACK_FONT_OUTLINE, 32))
+  local emitChargeWidget = self:AddChild(Widget("emitChargeWidget"))
+  self.emitChargeWidget = emitChargeWidget
+  -- 放左上角
+  emitChargeWidget:SetPosition(-self.size[1] / 2, self.size[2] / 2, 0)
+  -- 加一个圆黑透明背景
+  local emitChargeBg = emitChargeWidget:AddChild(Image("images/ui.xml", "black.tex"))
+  emitChargeBg:SetSize(40, 40)
+  emitChargeBg:SetTint(0, 0, 0, 0.8)
+  local emitChargeText = emitChargeWidget:AddChild(Text(FALLBACK_FONT_OUTLINE, 32))
   self.emitChargeText = emitChargeText
-  emitChargeText:SetPosition(0, self.size[2] / 2 + 20, 0)
 
   self.config = config
   self.levelConfig = config.levels[1]
@@ -73,6 +82,7 @@ local ArkSkill = Class(Widget, function(self, owner, config)
   self:SetChargeProgress(0)
   self:SetBuffProgress(0)
   self.owner:StartUpdatingComponent(self)
+  self.initComplete = false
 end)
 
 local function CaseShadowScale(scale)
@@ -104,6 +114,11 @@ local function UpdateTimeBuff(self, dt)
   return leftTime
 end
 
+local function isAutoEmit(emitType)
+  return emitType == CONSTANTS.EMIT_TYPE.AUTO or emitType == CONSTANTS.EMIT_TYPE.ATTACK
+    or emitType == CONSTANTS.EMIT_TYPE.UNDER_ATTACK
+end
+
 function ArkSkill:SetChargeProgress(current)
   local total = self.levelConfig.charge
   self.statusText:SetString(string.format("%d/%d", math.floor(math.min(current, total - 1)), total))
@@ -126,7 +141,7 @@ function ArkSkill:StopTimeCharge()
 end
 
 function ArkSkill:SetBuffProgress(current)
-  local total = self.levelConfig.buffTime
+  local total = self.levelConfig.shadowBuffTime
   self.buffShadow:SetScale(1, 1 - CaseShadowScale(current / total))
   return total - current
 end
@@ -140,17 +155,25 @@ function ArkSkill:StopTimeBuff()
 end
 
 function ArkSkill:SyncSkillStatus(status, level, chargeProgress, buffProgress, bullet, emitCharge)
-  print('SyncSkillStatus', status, level, chargeProgress, buffProgress, bullet, emitCharge)
+  self.status = status
+  self.initComplete = true
+  self.level = level
   self.levelConfig = self.config.levels[level]
   self.emitCharge = emitCharge
-  self.emitChargeText:SetString(tostring(emitCharge))
+  if emitCharge > 1 then
+    self.emitChargeWidget:Show()
+    self.emitChargeText:SetString(tostring(emitCharge))
+  else
+    self.emitChargeWidget:Hide()
+  end
 
   -- 自动触发图案
-  if self.config.autoEmit then
+  if isAutoEmit(self.config.emitType) then
     if status == CONSTANTS.SKILL_STATUS.LOCKED then
       self.autoEmit:Hide()
+    else
+      self.autoEmit:Show()
     end
-    self.autoEmit:Show()
   end
   -- 充能遮罩只在充能状态且充能没满时展示, 其余隐藏
   if status == CONSTANTS.SKILL_STATUS.CHARGING then
@@ -184,7 +207,7 @@ function ArkSkill:SyncSkillStatus(status, level, chargeProgress, buffProgress, b
   end
 
   -- 手动触发的遮罩
-  if self.emitCharge > 0 and not self.config.autoEmit and status ~= CONSTANTS.SKILL_STATUS.BUFFING then
+  if (self.config.emitType == CONSTANTS.EMIT_TYPE.PASSIVE) or (self.emitCharge > 0 and not isAutoEmit(self.config.emitType) and status ~= CONSTANTS.SKILL_STATUS.BUFFING) then
     self.handEmitShadow:Hide()
   else
     self.handEmitShadow:Show()
@@ -193,7 +216,7 @@ function ArkSkill:SyncSkillStatus(status, level, chargeProgress, buffProgress, b
   -- 充能计时器只在类型为时间充能且充能状态且充能没满时启动, 其余停止
 
   self:SetChargeProgress(chargeProgress)
-  if self.config.chargeType == CONSTANTS.CHARGE_TYPE.TIME and status == CONSTANTS.SKILL_STATUS.CHARGING
+  if self.config.chargeType == CONSTANTS.CHARGE_TYPE.AUTO and status == CONSTANTS.SKILL_STATUS.CHARGING
     and self.emitCharge < self.levelConfig.maxEmitCharge then
     self:StartTimeCharge(chargeProgress)
   else
@@ -204,7 +227,7 @@ function ArkSkill:SyncSkillStatus(status, level, chargeProgress, buffProgress, b
     self.statusText:SetColour(1, 1, 1, 1)
     self.statusText:SetString("LOCK")
   elseif status == CONSTANTS.SKILL_STATUS.CHARGING then
-    if self.config.autoEmit then
+    if isAutoEmit(self.config.emitType) then
       self.statusImg:SetTexture("images/ark_skill.xml", "sprite_skill_notready.tex")
       if self.emitCharge >= self.levelConfig.maxEmitCharge then
         self.statusText:SetString("")
@@ -240,8 +263,42 @@ end
 
 -- OnUpdate 需要第一帧检测, 第一帧要作点事情
 function ArkSkill:OnUpdate(dt)
-  SendModRPCToServer(GetModRPC("arkSkill", "RequestSyncAllSkillStatus"))
+  SendModRPCToServer(GetModRPC("arkSkill", "RequestSyncSkillStatus"), self.idx)
   self.OnUpdate = OnUpdate
+end
+
+function ArkSkill:OnGainFocus()
+  if not self.initComplete then
+    return
+  end
+  ArkSkill._base.OnGainFocus(self)
+  if not self.skillDesc then
+    local descConfig = {
+      locked = self.status == CONSTANTS.SKILL_STATUS.LOCKED,
+      lockedDesc = self.config.lockedDesc,
+      name = self.config.name,
+      chargeType = self.config.chargeType,
+      emitType = self.config.emitType,
+      charge = self.levelConfig.charge,
+      buffTime = self.levelConfig.buffTime,
+      hotKey = self.config.hotKey,
+      level = self.level,
+      desc = self.levelConfig.desc,
+    }
+    self.skillDesc = self:AddChild(ark_skill_desc(self.owner, descConfig, self.idx))
+    self.skillDesc:SetScale(1, 1, 1)
+    local size = self.skillDesc:GetSize()
+    self.skillDesc:SetPosition(-self.size[1] / 2 + size.x / 2, self.size[2] / 2 + size.y / 2 + 10, 0)
+  end
+  self.skillDesc:Show()
+end
+
+function ArkSkill:OnLoseFocus()
+  ArkSkill._base.OnLoseFocus(self)
+  if self.skillDesc then
+    self.skillDesc:Kill()
+    self.skillDesc = nil
+  end
 end
 
 return ArkSkill

@@ -8,11 +8,16 @@ function ArkSkill:SetupSkillConfig(config)
   self.config = config
   -- 搞几个默认值进去
   for _, config in ipairs(config.skills) do
-    config.chargeType = config.chargeType or CONSTANTS.CHARGE_TYPE.TIME
-    config.autoEmit = config.autoEmit or nil
+    config.chargeType = config.chargeType or CONSTANTS.CHARGE_TYPE.AUTO
+    config.emitType = config.emitType or CONSTANTS.EMIT_TYPE.HAND
+    -- 能自动触发的技能关闭快捷键
+    if config.emitType ~= CONSTANTS.EMIT_TYPE.HAND then
+      config.hotKey = nil
+    end
     for _, levelConfig in ipairs(config.levels) do
       levelConfig.charge = levelConfig.charge or 1
-      levelConfig.buffTime = levelConfig.buffTime or 1
+      -- levelConfig.buffTime = levelConfig.buffTime or 1
+      levelConfig.shadowBuffTime = levelConfig.buffTime or 0.3
       levelConfig.bullet = levelConfig.bullet or 1
       levelConfig.maxEmitCharge = levelConfig.maxEmitCharge or 1
     end
@@ -93,8 +98,14 @@ function ArkSkill:GoCharging(idx)
   local levelConfig = self:GetLevelConfig(idx)
   local data = self:GetSkillData(idx)
   data.status = CONSTANTS.SKILL_STATUS.CHARGING
-  if config.chargeType == CONSTANTS.CHARGE_TYPE.TIME then
-    self:StartTimeCharge(idx)
+  if config.chargeType == CONSTANTS.CHARGE_TYPE.AUTO then
+    if data.emitCharge >= levelConfig.maxEmitCharge then
+      self:StopTimeCharge(idx)
+      data.chargeProgress = 0
+      data.emitCharge = levelConfig.maxEmitCharge
+    else
+      self:StartTimeCharge(idx)
+    end
   end
   self:SyncSkillStatus(idx)
 end
@@ -112,12 +123,8 @@ function ArkSkill:SyncSkillStatus(idx)
     data.chargeProgress, data.buffProgress, data.bullet, data.emitCharge)
 end
 
-function ArkSkill:RequestSyncAllSkillStatus()
-  -- 循环#skills计数
-  for i = 1, #self.skills do
-    self:SyncSkillStatus(i)
-  end
-
+function ArkSkill:RequestSyncSkillStatus(idx)
+  self:SyncSkillStatus(idx)
 end
 
 function ArkSkill:OnUpdateBuff(idx, dt)
@@ -146,7 +153,40 @@ function ArkSkill:OnUpdate(dt)
   end
 end
 
+function ArkSkill:OnSave()
+  local data = {
+    skillsData = {}
+  }
+  for i, skill in ipairs(self.skills) do
+    table.insert(data.skillsData, skill.data)
+  end
+  return data
+end
+
+function ArkSkill:OnLoad(data)
+  if not data then
+    return
+  end
+  for i, skillData in ipairs(data.skillsData) do
+    self.skills[i].data = skillData
+    self.skills[i].levelConfig = self.skills[i].config.levels[skillData.level]
+    -- 根据status 切换到对应状态
+    if skillData.status == CONSTANTS.SKILL_STATUS.CHARGING then
+      self:GoCharging(i)
+    elseif skillData.status == CONSTANTS.SKILL_STATUS.BUFFING then
+      self:GoBuffing(i)
+    end
+  end
+end
+
 -- 推荐暴露的方法
+
+function ArkSkill:SetSkillLevel(idx, level)
+  local skill = self:GetSkill(idx)
+  skill.data.level = level
+  skill.levelConfig = skill.config.levels[level]
+  self:SyncSkillStatus(idx)
+end
 
 function ArkSkill:AddChargeProgress(idx, value)
   local data = self:GetSkillData(idx)
@@ -170,7 +210,7 @@ function ArkSkill:AddBuffProgress(idx, value)
   local data = self:GetSkillData(idx)
   local levelConfig = self:GetLevelConfig(idx)
   data.buffProgress = data.buffProgress + value
-  local leftBuff = data.buffProgress - levelConfig.buffTime
+  local leftBuff = data.buffProgress - levelConfig.shadowBuffTime
   if leftBuff >= 0 then
     data.buffProgress = leftBuff
     self:GoCharging(idx)
@@ -181,7 +221,7 @@ end
 
 function ArkSkill:HandEmitSkill(idx)
   local config = self:GetConfig(idx)
-  if config.autoEmit then
+  if config.emitType ~= CONSTANTS.EMIT_TYPE.HAND then
     return
   end
   local data = self:GetSkillData(idx)
