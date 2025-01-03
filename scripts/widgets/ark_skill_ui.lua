@@ -22,4 +22,8 @@ function ArkSkillUi:GetSkill(index)
   return self.skills[index]
 end
 
+function ArkSkillUi:GetSkillConfig(index)
+  return self.skills[index].config
+end
+
 return ArkSkillUi

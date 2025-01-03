@@ -288,7 +288,7 @@ function ArkSkill:OnGainFocus()
     self.skillDesc = self:AddChild(ark_skill_desc(self.owner, descConfig, self.idx))
     self.skillDesc:SetScale(1, 1, 1)
     local size = self.skillDesc:GetSize()
-    self.skillDesc:SetPosition(-self.size[1] / 2 + size.x / 2, self.size[2] / 2 + size.y / 2 + 10, 0)
+    self.skillDesc:SetPosition(-self.size[1] / 2 + size.x / 2, self.size[2] / 2 + size.y + 20, 0)
   end
   self.skillDesc:Show()
 end
@@ -298,6 +298,25 @@ function ArkSkill:OnLoseFocus()
   if self.skillDesc then
     self.skillDesc:Kill()
     self.skillDesc = nil
+  end
+end
+
+function ArkSkill:TryEmitSkill()
+  if not self.initComplete then
+    return
+  end
+  SendModRPCToServer(GetModRPC("arkSkill", "HandEmitSkill"), self.idx, TheInput:IsKeyDown(KEY_CTRL) or TheInput:IsKeyDown(KEY_RCTRL))
+end
+
+function ArkSkill:OnControl(control, down)
+  if ArkSkill._base.OnControl(self, control, down) then
+    return true
+  end
+  if control == CONTROL_ACCEPT then
+    if down then
+      self:TryEmitSkill()
+      return true
+    end
   end
 end
 

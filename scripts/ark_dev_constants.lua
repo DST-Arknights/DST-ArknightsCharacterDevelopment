@@ -20,4 +20,6 @@ return {
     ATTACK = "attack",
     UNDER_ATTACK = "under_attack",
   },
+  MAX_SKILL_LIMIT = 6,
+  MAX_SKILL_LEVEL = 10,
 }

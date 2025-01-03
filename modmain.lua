@@ -1,15 +1,21 @@
 GLOBAL.setmetatable(env, {
-  __index = function(t, k) return GLOBAL.rawget(GLOBAL, k) end
+  __index = function(t, k)
+    return GLOBAL.rawget(GLOBAL, k)
+  end
 })
+local common = require("ark_dev_common")
+local i18n = require("ark_dev_i18n")
+local CONSTANTS = require("ark_dev_constants")
 
-Assets = {Asset("ATLAS", "images/ark_skill.xml")}
+PrefabFiles = {"ark_skill_level_up"}
+Assets = {Asset("ATLAS", "images/ark_skill.xml"),}
 
 TUNING.ARK_DEV_CONFIG = {
   language = 'zh'
 }
 local lang = GetModConfigData('language')
 if lang ~= 'auto' then
-    TUNING.ARK_ITEM_CONFIG.language = lang
+  TUNING.ARK_ITEM_CONFIG.language = lang
 end
 
 AddModRPCHandler("arkSkill", "RequestSyncSkillStatus", function(player, idx)
@@ -28,7 +34,9 @@ local function OnRpcSyncSkillStatus(skillIndex, ...)
   end
   OnRpcSyncSkillStatus = function(skillIndex, ...)
     local skillUi = arkSkillUi:GetSkill(skillIndex)
+    -- local oldLevel = skillUi.level
     skillUi:SyncSkillStatus(...)
+    ThePlayer:PushEvent("refreshcrafting")
   end
   OnRpcSyncSkillStatus(skillIndex, ...)
 end
@@ -41,10 +49,58 @@ AddModRPCHandler("arkSkill", "HandEmitSkill", function(player, skillIndex)
   end
 end)
 
-local function findSkillHotKeyIndex(hotKey, skillConfigs)
-  for i, config in pairs(skillConfigs) do
-    if config.hotKey == hotKey then
-      return i
+local function SetupArkSkillHotKey(config)
+  -- 记下原本的热键
+  local originalHotKey = {}
+  for i, skillConfig in pairs(config.skills) do
+    originalHotKey[i] = skillConfig.hotKey
+  end
+  local localHotKey = nil
+  function ThePlayer:SaveArkSkillLocalHotKey(idx, hotKey)
+    localHotKey = localHotKey or {}
+    if hotKey == nil then
+      table.remove(localHotKey, idx)
+    else
+      localHotKey[idx] = hotKey
+    end
+    TheSim:SetPersistentString("ark_skill_local_hot_key" .. ThePlayer.userid .. ThePlayer.prefab,
+      json.encode(localHotKey), false)
+  end
+
+  function ThePlayer:GetArkSkillLocalHotKey(idx)
+    return config.skills[idx].hotKey
+  end
+
+  function ThePlayer:LoadArkSkillLocalHotKey()
+    TheSim:GetPersistentString("ark_skill_local_hot_key" .. ThePlayer.userid .. ThePlayer.prefab,
+      function(load_success, str)
+        if not load_success then
+          localHotKey = {}
+          return
+        end
+        local ok, data = pcall(function()
+          return json.decode(str)
+        end)
+        if not ok then
+          localHotKey = {}
+          return
+        end
+        localHotKey = data
+      end)
+  end
+  function ThePlayer:RefreshArkSkillLocalHotKey()
+    -- 先恢复原本的热键
+    for i, hotKey in pairs(originalHotKey) do
+      config.skills[i].hotKey = hotKey
+    end
+    if not localHotKey then
+      return
+    end
+    for i, hotKey in pairs(localHotKey) do
+      if not config.skills[i] then
+        break
+      end
+      config.skills[i].hotKey = hotKey
     end
   end
 end
@@ -59,54 +115,18 @@ AddClientModRPCHandler("arkSkill", "SetupArkSkillUi", function(config)
   controls.arkSkillUi = controls.inv.hand_inv:AddChild(ArkSkillUi(ThePlayer, config))
   controls.arkSkillUi:SetPosition(config.position or Vector3(-840, 80, 0))
   controls.arkSkillUi:SetScale(.5, .5, .5)
-  -- 记下原本的热键
-  local originalHotKey = {}
-  for i, skillConfig in pairs(config.skills) do
-    originalHotKey[i] = skillConfig.hotKey
-  end
-  local localHotKey = nil
-  function ThePlayer:SaveArkSkillLocalHotKey(idx, hotKey)
-    localHotKey = localHotKey or {}
-    if hotKey == nil then
-      table.remove(localHotKey, idx)
-    else
-      localHotKey[idx] = hotKey
-    end
-    TheSim:SetPersistentString("ark_skill_local_hot_key" ..ThePlayer.userid .. ThePlayer.prefab, json.encode(localHotKey), false)
-  end
-
-  function ThePlayer:GetArkSkillLocalHotKey(idx)
-    return config.skills[idx].hotKey
-  end
-
-  function ThePlayer:LoadArkSkillLocalHotKey()
-    TheSim:GetPersistentString("ark_skill_local_hot_key" ..ThePlayer.userid .. ThePlayer.prefab, function(load_success, str)
-      if not load_success then
-        localHotKey = {}
-        return
-      end
-      local ok, data = pcall(function() return json.decode(str) end)
-      if not ok then
-        localHotKey = {}
-        return
-      end
-      localHotKey = data
-    end)
-  end
-  function ThePlayer:RefreshArkSkillLocalHotKey()
-    -- 先恢复原本的热键
-    for i, hotKey in pairs(originalHotKey) do
-      config.skills[i].hotKey = hotKey
-    end
-    if not localHotKey then
-      return
-    end
-    for i, hotKey in pairs(localHotKey) do
-      config.skills[i].hotKey = hotKey
-    end
-  end
+  -- 安装本地热键方法
+  SetupArkSkillHotKey(config)
   ThePlayer:LoadArkSkillLocalHotKey()
   ThePlayer:RefreshArkSkillLocalHotKey()
+
+  local function findSkillHotKeyIndex(hotKey, skillConfigs)
+    for i, config in pairs(skillConfigs) do
+      if config.hotKey == hotKey then
+        return i
+      end
+    end
+  end
   -- 安装热键
   local _OnRawKey = ThePlayer.HUD.OnRawKey
   function ThePlayer.HUD:OnRawKey(key, down)
@@ -124,9 +144,66 @@ AddClientModRPCHandler("arkSkill", "SetupArkSkillUi", function(config)
       return _OnRawKey(self, key, down)
     end
     SendModRPCToServer(GetModRPC("arkSkill", "HandEmitSkill"), skillIndex,
-      TheInput:IsKeyDown(KEY_CTRL) or TheInput:IsKeyDown(KEY_RCTRL)
-    )
+      TheInput:IsKeyDown(KEY_CTRL) or TheInput:IsKeyDown(KEY_RCTRL))
     return true
   end
 end)
 
+local arkSkillLevelUpImages = {}
+function GLOBAL.SetupCharacterArkSkill(prefab, config)
+  TUNING.ARK_SKILL_CONFIG = TUNING.ARK_SKILL_CONFIG or {}
+  TUNING.ARK_SKILL_CONFIG[prefab] = config
+  local skills = config.skills
+  for i, skill in ipairs(skills) do
+    if i > CONSTANTS.MAX_SKILL_LIMIT then
+      break
+    end
+    
+    local resolveAtlas = resolvefilepath(skill.atlas)
+    if not arkSkillLevelUpImages[resolveAtlas] then
+      arkSkillLevelUpImages[resolveAtlas] = {}
+    end 
+    arkSkillLevelUpImages[resolveAtlas][skill.image] = true
+    for j, levelConfig in ipairs(skill.levels) do
+      if j > CONSTANTS.MAX_SKILL_LEVEL then
+        break
+      end
+      if j ~= 1 then
+        local prefabName = common.genArkSkillLevelUpPrefabName(i, j)
+        local ingredients = levelConfig.ingredients or { Ingredient("goldnugget", 1) }
+        local tag = common.genArkSkillLevelTag(i, j - 1)
+        AddCharacterRecipe(prefabName, ingredients, TECH.ARK_PROCESSING_ONE, {
+          nounlock = true,
+          atlas = skill.atlas,
+          image = skill.image,
+          actionstr = j <= 7 and "ARK_SKILL_UPDATE" or "ARK_SKILL_SPECIALIZATION",
+          builder_tag = tag
+        })
+        local upperName = string.upper(prefabName)
+        local nextLevelString = '';
+        STRINGS.NAMES[upperName] = i18n('skill') .. " " .. skill.name
+        local desc = i18n('currentLevel') .. " " .. common.formatSkillLevelString(j-1) .. "\n" .. (i18n('nextLevel') .. " " .. common.formatSkillLevelString(j))
+        STRINGS.RECIPE_DESC[upperName] = desc
+      end
+    end
+  end
+end
+
+STRINGS.UI.CRAFTING.RECIPEACTION.ARK_SKILL_UPDATE = i18n('levelUp')
+STRINGS.UI.CRAFTING.RECIPEACTION.ARK_SKILL_SPECIALIZATION = i18n('specialization')
+
+-- 修改技能升级图标的尺寸, 维持高清
+AddClassPostConstruct("widgets/spinner", function(self)
+  print('spinner inject')
+  local SetSelectedIndex = self.SetSelectedIndex
+  function self:SetSelectedIndex(index)
+    print('SetSelectedIndex', index)
+    SetSelectedIndex(self, index)
+    local fgimage = self.fgimage
+    local atlas = fgimage.atlas
+    local texture = fgimage.texture
+    if arkSkillLevelUpImages[atlas] and arkSkillLevelUpImages[atlas][texture] then
+      fgimage:SetSize(60, 60)
+    end
+  end
+end)

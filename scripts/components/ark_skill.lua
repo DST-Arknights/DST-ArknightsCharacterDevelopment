@@ -1,8 +1,37 @@
 local CONSTANTS = require "ark_dev_constants"
+local common = require "ark_dev_common"
 
 local ArkSkill = Class(function(self, inst)
   self.inst = inst
+  self.loaded = false
+  self.inst:DoTaskInTime(0, function()
+    local config = TUNING.ARK_SKILL_CONFIG[self.inst.prefab]
+    if config then
+      self:SetupSkillConfig(config)
+      if self.loadData then
+        self:LoadSkillData(self.loadData)
+        self.loadData = nil
+      end
+      self.loaded = true
+    end
+  end)
 end)
+
+function ArkSkill:LoadSkillData(loadData)
+  for i, skillData in ipairs(loadData.skillsData) do
+    if not self.skills[i] then
+      break
+    end
+    self.skills[i].data = skillData
+    self:SetSkillLevel(i, skillData.level)
+    -- 根据status 切换到对应状态
+    if skillData.status == CONSTANTS.SKILL_STATUS.CHARGING then
+      self:GoCharging(i)
+    elseif skillData.status == CONSTANTS.SKILL_STATUS.BUFFING then
+      self:GoBuffing(i)
+    end
+  end
+end
 
 function ArkSkill:SetupSkillConfig(config)
   self.config = config
@@ -43,6 +72,7 @@ function ArkSkill:SetupSkillConfig(config)
   for i, skill in ipairs(self.skills) do
     if skill.config.unlock then
       self:UnLock(i)
+      self:SetSkillLevel(i, 1)
     end
   end
   self.inst:StartUpdatingComponent(self)
@@ -142,15 +172,21 @@ function ArkSkill:OnUpdateTimeCharge(idx, dt)
 end
 
 function ArkSkill:OnUpdate(dt)
-  for i = 1, #self.skills do
-    -- buff流动期间, 不会自动时间充能
-    local leftBuffTime = self:OnUpdateBuff(i, dt)
-    if leftBuffTime == nil then
-      self:OnUpdateTimeCharge(i, dt)
-    elseif leftBuffTime > 0 then
-      self:OnUpdateTimeCharge(i, dt + leftBuffTime)
+  if not self.loaded then
+    return
+  end
+  self.OnUpdate = function(self, dt)
+    for i = 1, #self.skills do
+      -- buff流动期间, 不会自动时间充能
+      local leftBuffTime = self:OnUpdateBuff(i, dt)
+      if leftBuffTime == nil then
+        self:OnUpdateTimeCharge(i, dt)
+      elseif leftBuffTime > 0 then
+        self:OnUpdateTimeCharge(i, dt + leftBuffTime)
+      end
     end
   end
+  self.OnUpdate(self, dt)
 end
 
 function ArkSkill:OnSave()
@@ -167,24 +203,34 @@ function ArkSkill:OnLoad(data)
   if not data then
     return
   end
-  for i, skillData in ipairs(data.skillsData) do
-    self.skills[i].data = skillData
-    self.skills[i].levelConfig = self.skills[i].config.levels[skillData.level]
-    -- 根据status 切换到对应状态
-    if skillData.status == CONSTANTS.SKILL_STATUS.CHARGING then
-      self:GoCharging(i)
-    elseif skillData.status == CONSTANTS.SKILL_STATUS.BUFFING then
-      self:GoBuffing(i)
-    end
-  end
+  self.loadData = data
 end
 
 -- 推荐暴露的方法
 
+function ArkSkill:LevelUpSkill(idx)
+  local skill = self:GetSkill(idx)
+  local level = skill.data.level + 1
+  self:SetSkillLevel(idx, level)
+end
+
 function ArkSkill:SetSkillLevel(idx, level)
   local skill = self:GetSkill(idx)
+  local levelConfig = skill.config.levels[level]
+  if not levelConfig then
+    return
+  end
   skill.data.level = level
   skill.levelConfig = skill.config.levels[level]
+  local skillData = self:GetSkillData(idx)
+  for i = 1, CONSTANTS.MAX_SKILL_LEVEL do
+    local skillTag = common.genArkSkillLevelTag(idx, i)
+    if not skillData.locked and i == level then
+      self.inst:AddTag(skillTag)
+    else
+      self.inst:RemoveTag(skillTag)
+    end
+  end
   self:SyncSkillStatus(idx)
 end
 

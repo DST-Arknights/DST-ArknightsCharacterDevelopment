@@ -24,6 +24,13 @@ local i18n = {
     cancel = '取消',
     reset = '重置',
     tipSettingSkillHotKeyConflict = '冲突的按键',
+    skill = '技能',
+    levelUp = '升级',
+    specialization = '专精',
+    currentLevel = '当前等级',
+    nextLevel = '下一等级',
+    -- 该技能已满级
+    skillMaxLevel = '该技能已满级',
   }
 }
 
