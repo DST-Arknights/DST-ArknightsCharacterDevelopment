@@ -32,11 +32,9 @@ local ArkSkillDescText = Class(Widget, function(self, text, maxWidth, maxHeight)
       local currentHeight = 0
       local success = true
       for j, innerLine in ipairs(innerLines) do
-        print('innerLine', innerLine, #innerLines)
         local text = self:AddChild(Text(FALLBACK_FONT_FULL, 80, innerLine))
         local w, h = text:GetRegionSize()
         if w > self.maxWidth then
-          print('w > self.maxWidth', w, self.maxWidth)
           text:Kill()
           success = false
           break
@@ -44,12 +42,10 @@ local ArkSkillDescText = Class(Widget, function(self, text, maxWidth, maxHeight)
         text:SetPosition(-self.maxWidth / 2 + w / 2, -self.h - currentHeight, 0)
         currentWidth = math.max(currentWidth, w)
         currentHeight = currentHeight + h
-        print('currentHeight', currentHeight, h)
         if j ~= #innerLines then
           currentHeight = currentHeight + H_OFFSET
         end
         if self.maxHeight and currentHeight >= self.maxHeight then
-          print('currentHeight >= self.maxHeight', currentHeight, self.maxHeight)
           exceededHeight = true
           break
         end

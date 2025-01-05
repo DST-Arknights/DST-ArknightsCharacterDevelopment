@@ -31,6 +31,8 @@ local i18n = {
     nextLevel = '下一等级',
     -- 该技能已满级
     skillMaxLevel = '该技能已满级',
+    skillTrainingStation = '技能训练站',
+    skillTrainingStationDesc = '技能训练站',
   }
 }
 

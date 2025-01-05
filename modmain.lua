@@ -7,8 +7,13 @@ local common = require("ark_dev_common")
 local i18n = require("ark_dev_i18n")
 local CONSTANTS = require("ark_dev_constants")
 
-PrefabFiles = {"ark_skill_level_up"}
-Assets = {Asset("ATLAS", "images/ark_skill.xml"),}
+PrefabFiles = {"ark_training_station"}
+Assets = {
+  Asset("ATLAS", "images/ark_skill.xml"),
+  Asset("ATLAS", "images/ark_training_station.xml"),
+  Asset("ATLAS", "images/map_icons/ark_training_station.xml"),
+  Asset("ANIM", "anim/ark_training_station.zip"),
+}
 
 TUNING.ARK_DEV_CONFIG = {
   language = 'zh'
@@ -17,6 +22,29 @@ local lang = GetModConfigData('language')
 if lang ~= 'auto' then
   TUNING.ARK_ITEM_CONFIG.language = lang
 end
+
+-- 添加训练站配方
+AddRecipe2("ark_training_station",
+  {Ingredient("boards", 4), Ingredient("goldnugget", 2)},
+  TECH.SCIENCE_TWO,
+  {
+    placer = 'ark_training_station_placer',
+    atlas = "images/ark_training_station.xml",
+    image = "ark_training_station.tex",
+  },
+  {"STRUCTURES"}
+)
+AddRecipeToFilter("ark_training_station", "PROTOTYPERS")
+
+STRINGS.NAMES.ARK_TRAINING_STATION = i18n("skillTrainingStation")
+STRINGS.RECIPE_DESC.ARK_TRAINING_STATION = i18n("skillTrainingStationDesc")
+
+-- 添加技能升级的制作回调
+AddModRPCHandler("arkSkill", "LevelUpSkill", function(player, skillIndex)
+  if player and player.components.ark_skill then
+    player.components.ark_skill:LevelUpSkill(skillIndex)
+  end
+end)
 
 AddModRPCHandler("arkSkill", "RequestSyncSkillStatus", function(player, idx)
   if player and player.components.ark_skill then
@@ -36,7 +64,7 @@ local function OnRpcSyncSkillStatus(skillIndex, ...)
     local skillUi = arkSkillUi:GetSkill(skillIndex)
     -- local oldLevel = skillUi.level
     skillUi:SyncSkillStatus(...)
-    ThePlayer:PushEvent("refreshcrafting")
+    -- ThePlayer:PushEvent("refreshcrafting")
   end
   OnRpcSyncSkillStatus(skillIndex, ...)
 end
@@ -150,7 +178,7 @@ AddClientModRPCHandler("arkSkill", "SetupArkSkillUi", function(config)
 end)
 
 local arkSkillLevelUpImages = {}
-function GLOBAL.SetupCharacterArkSkill(prefab, config)
+function GLOBAL.SetupArkCharacterSkillConfig(prefab, config)
   TUNING.ARK_SKILL_CONFIG = TUNING.ARK_SKILL_CONFIG or {}
   TUNING.ARK_SKILL_CONFIG[prefab] = config
   local skills = config.skills
@@ -172,15 +200,15 @@ function GLOBAL.SetupCharacterArkSkill(prefab, config)
         local prefabName = common.genArkSkillLevelUpPrefabName(i, j)
         local ingredients = levelConfig.ingredients or { Ingredient("goldnugget", 1) }
         local tag = common.genArkSkillLevelTag(i, j - 1)
-        AddCharacterRecipe(prefabName, ingredients, TECH.ARK_PROCESSING_ONE, {
+        AddCharacterRecipe(prefabName, ingredients, TECH.ARK_TRAINING_ONE, {
           nounlock = true,
           atlas = skill.atlas,
           image = skill.image,
           actionstr = j <= 7 and "ARK_SKILL_UPDATE" or "ARK_SKILL_SPECIALIZATION",
-          builder_tag = tag
+          builder_tag = tag,
+          manufactured = true,
         })
         local upperName = string.upper(prefabName)
-        local nextLevelString = '';
         STRINGS.NAMES[upperName] = i18n('skill') .. " " .. skill.name
         local desc = i18n('currentLevel') .. " " .. common.formatSkillLevelString(j-1) .. "\n" .. (i18n('nextLevel') .. " " .. common.formatSkillLevelString(j))
         STRINGS.RECIPE_DESC[upperName] = desc
@@ -207,3 +235,23 @@ AddClassPostConstruct("widgets/spinner", function(self)
     end
   end
 end)
+
+local TechTree = require('techtree')
+
+table.insert(TechTree.AVAILABLE_TECH, 'ARK_TRAINING_TECH')
+
+TECH.NONE.ARK_TRAINING_TECH = 0
+TECH.ARK_TRAINING_ONE = { ARK_TRAINING_TECH = 1}
+
+for k,v in pairs(TUNING.PROTOTYPER_TREES) do
+  v.ARK_TRAINING_TECH = 0
+end
+
+TUNING.PROTOTYPER_TREES.ARK_TRAINING_ONE = TechTree.Create({
+  ARK_TRAINING_TECH = 1,
+})
+
+
+for i, v in pairs(AllRecipes) do
+	v.level.ARK_TRAINING_TECH = v.level.ARK_TRAINING_TECH or 0
+end
